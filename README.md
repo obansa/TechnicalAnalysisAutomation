@@ -54,3 +54,6 @@ The verdict column reads `edge holds` only if the pattern beat random entries in
 `paper_trade.py` is a forward test. It never places orders; it logs what the rules in `paper_strategies.json` would have done on new daily candles since the start date in `paper_state.json`:
 
     python paper_trade.py            # download new candles, update paper_trades.csv, print the record
+
+### New pattern detectors (branch `ophand`)
+`smart_money.py` detects smart money concepts (break of structure, change of character, liquidity sweeps, fair value gaps, order blocks with retests) and `cup_handle.py` detects cup and handle. All report a pattern on the bar where it is first known. `tests/test_detectors.py` (run `python -m pytest tests`) checks each definition on hand-built candles, planted and malformed cups, and re-runs every detector on truncated data to prove there is no lookahead. `new_pattern_analysis.ipynb` shows the accuracy checks, then tests the patterns on six coins at daily, 4-hour and hourly bars (result: mostly a momentum effect, nothing proven as a trade).
