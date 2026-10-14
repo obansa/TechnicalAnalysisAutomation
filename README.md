@@ -47,3 +47,10 @@ The verdict column reads `edge holds` only if the pattern beat random entries in
 
 ### Trading the patterns
 `trade_sim.py` turns signals into trades: next-day-open entry, ATR-based stop and target, a maximum holding time, and 0.15% costs per side. Exit rules are tuned on data before 2024 only. `trade_analysis.ipynb` runs this for the five best daily patterns on the six altcoins, with a random-entry baseline, year-by-year and per-coin breakdowns, a cost sensitivity table and a Bitcoin check.
+
+### Proving the strategies, and paper trading
+`strategy_lab.py` adds trend/volume filters, 4-hour bars and combined signals, and applies a strict protocol: filter and exit rules are tuned on pre-2024 trades only, then compared with filter-matched random entries, with a multiple-testing correction. `proof_analysis.ipynb` shows the results (2 of 40 strategies passed; they are the same idea: shorting daily MACD bearish divergences).
+
+`paper_trade.py` is a forward test. It never places orders; it logs what the rules in `paper_strategies.json` would have done on new daily candles since the start date in `paper_state.json`:
+
+    python paper_trade.py            # download new candles, update paper_trades.csv, print the record
