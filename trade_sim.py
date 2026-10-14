@@ -24,6 +24,28 @@ def atr(ohlc: pd.DataFrame, n: int = 14) -> np.ndarray:
     return tr.ewm(alpha=1.0 / n, adjust=False, min_periods=n).mean().to_numpy()
 
 
+def _walk(h, l, c, entry_i, last, direction, entry, stop, tgt):
+    # Walk bars entry_i..last. Returns (exit_price, exit_index, reason) with reason 'stop', 'target' or 'time'.
+    for j in range(entry_i, last + 1):
+        if direction > 0:
+            if stop is not None and l[j] <= stop:
+                return stop, j, 'stop'
+            if tgt is not None and h[j] >= tgt:
+                return tgt, j, 'target'
+        else:
+            if stop is not None and h[j] >= stop:
+                return stop, j, 'stop'
+            if tgt is not None and l[j] <= tgt:
+                return tgt, j, 'target'
+    return c[last], last, 'time'
+
+
+def _levels(entry, a, direction, stop_mult, tgt_mult):
+    stop = None if stop_mult is None else entry - direction * stop_mult * a
+    tgt = None if tgt_mult is None else entry + direction * tgt_mult * a
+    return stop, tgt
+
+
 def simulate_trade(o, h, l, c, a, i, direction, stop_mult, tgt_mult, hold, cost):
     # Returns (exit_index, net_log_return, gross_log_return) or None if the trade can't be run.
     entry_i = i + 1
@@ -31,32 +53,37 @@ def simulate_trade(o, h, l, c, a, i, direction, stop_mult, tgt_mult, hold, cost)
     if entry_i > last or np.isnan(a[i]) or a[i] <= 0:
         return None
     entry = o[entry_i]
-    stop = None if stop_mult is None else entry - direction * stop_mult * a[i]
-    tgt = None if tgt_mult is None else entry + direction * tgt_mult * a[i]
-
-    exit_price, exit_i = c[last], last
-    for j in range(entry_i, last + 1):
-        if direction > 0:
-            if stop is not None and l[j] <= stop:
-                exit_price, exit_i = stop, j
-                break
-            if tgt is not None and h[j] >= tgt:
-                exit_price, exit_i = tgt, j
-                break
-        else:
-            if stop is not None and h[j] >= stop:
-                exit_price, exit_i = stop, j
-                break
-            if tgt is not None and l[j] <= tgt:
-                exit_price, exit_i = tgt, j
-                break
+    stop, tgt = _levels(entry, a[i], direction, stop_mult, tgt_mult)
+    exit_price, exit_i, _ = _walk(h, l, c, entry_i, last, direction, entry, stop, tgt)
     gross = direction * np.log(exit_price / entry)
     return exit_i, gross - 2 * cost, gross
 
 
+def simulate_trade_live(o, h, l, c, a, i, direction, stop_mult, tgt_mult, hold, cost):
+    # Like simulate_trade, but aware that the data ends at the last bar.
+    # Returns a dict with status 'PENDING' (enters at the next open, not yet known), 'OPEN'
+    # (still inside its holding period, marked at the last close) or 'CLOSED' (reason stop/target/time).
+    n = len(c)
+    entry_i = i + 1
+    if entry_i > n - 1:
+        return dict(status='PENDING', entry_i=entry_i)
+    if np.isnan(a[i]) or a[i] <= 0:
+        return None
+    entry = o[entry_i]
+    stop, tgt = _levels(entry, a[i], direction, stop_mult, tgt_mult)
+    last = min(i + hold, n - 1)
+    price, exit_i, reason = _walk(h, l, c, entry_i, last, direction, entry, stop, tgt)
+    gross = direction * np.log(price / entry)
+    still_open = reason == 'time' and i + hold > n - 1
+    return dict(status='OPEN' if still_open else 'CLOSED', reason='' if still_open else reason,
+                entry_i=entry_i, exit_i=exit_i, entry=entry, stop=stop, tgt=tgt, price=price,
+                gross=gross, net=gross - 2 * cost)
+
+
 def run_trades(coins: dict, pattern: str, direction: int, stop_mult, tgt_mult, hold: int,
-               cost: float = DEFAULT_COST) -> pd.DataFrame:
+               cost: float = DEFAULT_COST, eligible: dict = None) -> pd.DataFrame:
     # coins: output of cross_coin.prepare (daily). Returns one row per trade.
+    # eligible: optional {coin: bool array over bars}; signals on bars where it is False are ignored.
     rows = []
     for sym, cd in coins.items():
         ohlc = cd['ohlc']
@@ -66,6 +93,8 @@ def run_trades(coins: dict, pattern: str, direction: int, stop_mult, tgt_mult, h
             a = cd['atr'] = atr(ohlc)
         ev = cd['events']
         sig = np.sort(ev.loc[(ev['pattern'] == pattern) & (ev['direction'] == direction), 'i'].to_numpy())
+        if eligible is not None:
+            sig = sig[eligible[sym][sig]]
         busy_until = -1
         for i in sig:
             if i <= busy_until:
@@ -108,9 +137,11 @@ def tune_exit_rules(coins: dict, pattern: str, direction: int, test_start, cost=
 
 
 def random_entry_baseline(coins: dict, direction: int, stop_mult, tgt_mult, hold: int, test_start,
-                          n_trades_per_coin: dict, cost=DEFAULT_COST, n_perm: int = 300, seed: int = 0) -> np.ndarray:
+                          n_trades_per_coin: dict, cost=DEFAULT_COST, n_perm: int = 300, seed: int = 0,
+                          eligible: dict = None) -> np.ndarray:
     # Mean net return per trade when the same number of trades per coin are entered on random
     # days in the recent period, in the same direction with the same exit rules.
+    # eligible: same filter as the pattern trades used, so a filter cannot create an edge by itself.
     rng = np.random.default_rng(seed)
     test_start = pd.Timestamp(test_start)
     prep = {}
@@ -121,6 +152,10 @@ def random_entry_baseline(coins: dict, direction: int, stop_mult, tgt_mult, hold
             cd['atr'] = atr(ohlc)
         first = int(np.searchsorted(ohlc.index, test_start)) - 1
         pool = np.arange(max(first, 14), len(ohlc) - 2)
+        if eligible is not None:
+            pool = pool[eligible[sym][pool]]
+        if len(pool) == 0:
+            continue
         prep[sym] = (ohlc, pool, n)
     means = np.empty(n_perm)
     for p in range(n_perm):
