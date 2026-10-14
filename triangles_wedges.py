@@ -7,6 +7,9 @@ from trendline_automation import fit_trendlines_high_low
 SHAPES = ['ascending_triangle', 'descending_triangle', 'symmetric_triangle',
           'rising_wedge', 'falling_wedge']
 
+# Non-converging shapes: parallel lines and lines that spread apart
+PARALLEL_SHAPES = ['rectangle', 'rising_channel', 'falling_channel', 'broadening']
+
 
 @dataclass
 class ConvergingPattern:
@@ -36,40 +39,55 @@ def _count_touches(line: np.array, y: np.array, tol: float, min_gap: int) -> int
 
 def classify_lines(support_slope: float, resist_slope: float, start_width: float,
                    end_width: float, bar_scale: float,
-                   flat_thresh: float = 0.1, min_converge: float = 0.3):
+                   flat_thresh: float = 0.1, min_converge: float = 0.3,
+                   parallel_tol: float = 0.15):
     # Slopes are normalized by bar_scale (average bar range), so flat_thresh means
     # "less than 10% of a typical bar's range per bar".
     if start_width <= 0 or end_width <= 0:
         return None
-    if end_width > (1.0 - min_converge) * start_width:
-        return None # Not converging enough
 
     s = support_slope / bar_scale
     r = resist_slope / bar_scale
     s_flat = abs(s) < flat_thresh
     r_flat = abs(r) < flat_thresh
+    ratio = end_width / start_width
 
-    if r_flat and s > 0:
-        return 'ascending_triangle'
-    if s_flat and r < 0:
-        return 'descending_triangle'
-    if r < 0 and s > 0:
-        return 'symmetric_triangle'
-    if r > 0 and s > r:
-        return 'rising_wedge'
-    if s < 0 and r < s:
-        return 'falling_wedge'
+    if ratio <= 1.0 - min_converge: # Converging
+        if r_flat and s > 0:
+            return 'ascending_triangle'
+        if s_flat and r < 0:
+            return 'descending_triangle'
+        if r < 0 and s > 0:
+            return 'symmetric_triangle'
+        if r > 0 and s > r:
+            return 'rising_wedge'
+        if s < 0 and r < s:
+            return 'falling_wedge'
+        return None
+
+    if abs(ratio - 1.0) <= parallel_tol: # Parallel
+        if s_flat and r_flat:
+            return 'rectangle'
+        if not s_flat and not r_flat and s > 0 and r > 0:
+            return 'rising_channel'
+        if not s_flat and not r_flat and s < 0 and r < 0:
+            return 'falling_channel'
+        return None
+
+    if ratio >= 1.0 + min_converge and r > 0 and s < 0: # Diverging (megaphone)
+        return 'broadening'
     return None
 
 
 def find_triangles_wedges(ohlc: pd.DataFrame, lookback: int, step: int = 1,
                           flat_thresh: float = 0.1, min_converge: float = 0.3,
-                          min_touches: int = 2, max_hold: int = None):
+                          min_touches: int = 2, max_hold: int = None, shapes=SHAPES):
     # ohlc must hold log prices in columns high, low, close.
     # Every `step` bars, fit support/resistance on the last `lookback` bars.
     # If the lines converge into a recognized shape, the pattern stays active for
     # up to max_hold bars (default lookback // 2); the first close outside the lines
     # in that period is the breakout and is reported at that bar (no lookahead).
+    # Only shapes in `shapes` are tracked: SHAPES (triangles/wedges) or PARALLEL_SHAPES.
     high = ohlc['high'].to_numpy()
     low = ohlc['low'].to_numpy()
     close = ohlc['close'].to_numpy()
@@ -118,7 +136,7 @@ def find_triangles_wedges(ohlc: pd.DataFrame, lookback: int, step: int = 1,
 
         shape = classify_lines(s_slope, r_slope, start_width, end_width, bar_scale,
                                flat_thresh, min_converge)
-        if shape is None:
+        if shape is None or shape not in shapes:
             continue
 
         x = np.arange(lookback)
@@ -160,6 +178,8 @@ if __name__ == '__main__':
     data['date'] = data['date'].astype('datetime64[s]')
     data = data.set_index('date')
 
-    pats = find_triangles_wedges(np.log(data[['open', 'high', 'low', 'close']]), lookback=30)
+    log_data = np.log(data[['open', 'high', 'low', 'close']])
+    pats = find_triangles_wedges(log_data, lookback=30)
+    pats += find_triangles_wedges(log_data, lookback=30, shapes=PARALLEL_SHAPES)
     summary = pd.DataFrame([(p.shape, p.direction) for p in pats], columns=['shape', 'direction'])
     print(summary.groupby(['shape', 'direction']).size())

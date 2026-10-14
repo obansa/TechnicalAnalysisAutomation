@@ -3,9 +3,8 @@ import numpy as np
 import math
 import matplotlib.pyplot as plt
 import mplfinance as mpf
-from pyclustering.cluster.silhouette import silhouette_ksearch_type, silhouette_ksearch
-from pyclustering.cluster.kmeans import kmeans
-from pyclustering.cluster.center_initializer import kmeans_plusplus_initializer
+from sklearn.cluster import KMeans
+from sklearn.metrics import silhouette_score
 from perceptually_important import find_pips
 
 
@@ -73,6 +72,12 @@ class PIPPatternMiner:
         plt.show()
 
 
+    def get_cluster(self, pips_y: list) -> int:
+        # Index of the cluster whose center is nearest to these (un-normalized) pips
+        norm_y = (np.array(pips_y) - np.mean(pips_y)) / np.std(pips_y)
+        dists = np.linalg.norm(np.array(self._cluster_centers) - norm_y, axis=1)
+        return int(np.argmin(dists))
+
     def predict(self, pips_y: list):
         norm_y = (np.array(pips_y) - np.mean(pips_y)) / np.std(pips_y)
 
@@ -100,10 +105,7 @@ class PIPPatternMiner:
         self._find_unique_patterns()
         
 
-        search_instance = silhouette_ksearch(
-                self._unique_pip_patterns, 5, 40, algorithm=silhouette_ksearch_type.KMEANS).process()
-        
-        amount = search_instance.get_amount()
+        amount = self._silhouette_search()
         self._kmeans_cluster_patterns(amount)
 
         self._get_cluster_signals()
@@ -127,9 +129,7 @@ class PIPPatternMiner:
             self._returns = pd.Series(self._data).diff().shift(-1)
             print("rep", rep) 
             self._find_unique_patterns()
-            search_instance = silhouette_ksearch(
-                    self._unique_pip_patterns, 5, 40, algorithm=silhouette_ksearch_type.KMEANS).process()
-            amount = search_instance.get_amount()
+            amount = self._silhouette_search()
             self._kmeans_cluster_patterns(amount)
             self._get_cluster_signals()
             self._assign_clusters()
@@ -165,15 +165,26 @@ class PIPPatternMiner:
             last_pips_x = pips_x
 
 
-    def _kmeans_cluster_patterns(self, amount_clusters):
-        # Cluster Patterns
-        initial_centers = kmeans_plusplus_initializer(self._unique_pip_patterns, amount_clusters).initialize()
-        kmeans_instance = kmeans(self._unique_pip_patterns, initial_centers)
-        kmeans_instance.process()
+    def _silhouette_search(self, k_min: int = 5, k_max: int = 40, sample_size: int = 5000) -> int:
+        # Pick the number of clusters with the best silhouette score.
+        # Silhouette is O(n^2), so it is scored on a fixed random sample of patterns.
+        x = np.array(self._unique_pip_patterns)
+        best_k, best_score = k_min, -1.0
+        for k in range(k_min, k_max + 1):
+            labels = KMeans(n_clusters=k, n_init=1, random_state=0).fit_predict(x)
+            score = silhouette_score(x, labels, sample_size=min(sample_size, len(x)), random_state=0)
+            if score > best_score:
+                best_k, best_score = k, score
+        return best_k
 
-        # Extract clustering results: clusters and their centers
-        self._pip_clusters = kmeans_instance.get_clusters()
-        self._cluster_centers = kmeans_instance.get_centers()
+    def _kmeans_cluster_patterns(self, amount_clusters):
+        # Cluster Patterns (k-means++ initialization)
+        x = np.array(self._unique_pip_patterns)
+        km = KMeans(n_clusters=amount_clusters, n_init=10, random_state=0).fit(x)
+
+        # Extract clustering results: clusters (member indices) and their centers
+        self._pip_clusters = [list(np.flatnonzero(km.labels_ == c)) for c in range(amount_clusters)]
+        self._cluster_centers = [list(c) for c in km.cluster_centers_]
 
     def _get_martin(self, rets: np.array):
         rsum = np.sum(rets)

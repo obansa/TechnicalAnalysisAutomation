@@ -4,7 +4,8 @@ import pandas as pd
 
 from candlestick_patterns import find_candlestick_patterns
 from double_top_bottom import find_multi_tops
-from triangles_wedges import find_triangles_wedges
+from triangles_wedges import find_triangles_wedges, PARALLEL_SHAPES
+from divergences import find_divergences, rsi, macd_hist
 from head_shoulders import find_hs_patterns
 from flags_pennants import find_flags_pennants_pips
 
@@ -59,6 +60,17 @@ def collect_events(ohlc: pd.DataFrame, order: int, tri_lookback: int) -> pd.Data
     # Triangles and wedges, labelled by breakout direction
     for p in find_triangles_wedges(log_ohlc, tri_lookback):
         add(p.break_i, f"{p.shape}_{'up' if p.direction > 0 else 'down'}", p.direction)
+
+    # Rectangles, channels and broadening formations (separate pass so they
+    # don't block triangles/wedges from being found)
+    for p in find_triangles_wedges(log_ohlc, tri_lookback, shapes=PARALLEL_SHAPES):
+        add(p.break_i, f"{p.shape}_{'up' if p.direction > 0 else 'down'}", p.direction)
+
+    # RSI and MACD-histogram divergences
+    raw_close = ohlc['close'].to_numpy()
+    for ind_name, ind in (('rsi', rsi(raw_close)), ('macd', macd_hist(raw_close))):
+        for d in find_divergences(close, ind, order):
+            add(d.conf_i, f'{ind_name}_{d.kind}_div', d.direction)
 
     # Existing detectors from this repo
     hs, ihs = find_hs_patterns(close, order)
