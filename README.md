@@ -44,3 +44,6 @@ The verdict column reads `edge holds` only if the pattern beat random entries in
 `cross_coin.py` runs every detector on ETH, SOL, BNB, XRP, ADA and DOGE (data in `data/`), pools the signals per pattern, and corrects for the number of patterns tested. `coin_analysis.ipynb` shows the results, checks whether the Bitcoin leads replicate, and lists currently active signals. Download the coin data with:
 
     python data_fetcher.py --symbol ETHUSDT --interval 1d --out data/ETHUSDT86400.csv
+
+### Trading the patterns
+`trade_sim.py` turns signals into trades: next-day-open entry, ATR-based stop and target, a maximum holding time, and 0.15% costs per side. Exit rules are tuned on data before 2024 only. `trade_analysis.ipynb` runs this for the five best daily patterns on the six altcoins, with a random-entry baseline, year-by-year and per-coin breakdowns, a cost sensitivity table and a Bitcoin check.
