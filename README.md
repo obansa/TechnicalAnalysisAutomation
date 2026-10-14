@@ -39,3 +39,8 @@ The verdict column reads `edge holds` only if the pattern beat random entries in
 `pattern_analysis.ipynb` runs the divergences, rectangles/channels/broadening, and the PIP pattern miner (trained before 2024, tested on 2024 onward) on the latest data, with charts and conclusions. Re-run it after updating the data:
 
     jupyter nbconvert --to notebook --execute --inplace pattern_analysis.ipynb
+
+### Other coins
+`cross_coin.py` runs every detector on ETH, SOL, BNB, XRP, ADA and DOGE (data in `data/`), pools the signals per pattern, and corrects for the number of patterns tested. `coin_analysis.ipynb` shows the results, checks whether the Bitcoin leads replicate, and lists currently active signals. Download the coin data with:
+
+    python data_fetcher.py --symbol ETHUSDT --interval 1d --out data/ETHUSDT86400.csv
