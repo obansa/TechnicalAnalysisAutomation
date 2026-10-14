@@ -6,6 +6,7 @@ import pandas as pd
 
 from data_fetcher import update_csv
 from pattern_backtest import load_ohlc, collect_events, DEFAULTS
+from smart_money import collect_smc_events, ORDER
 from strategy_lab import FILTERS, add_confluence
 from trade_sim import atr, simulate_trade_live, DEFAULT_COST
 
@@ -55,7 +56,9 @@ def build_coin(symbol: str, data_dir: str, download: bool) -> dict:
     feat['sma50'] = feat['close'].rolling(50).mean()
     feat['sma200'] = feat['close'].rolling(200).mean()
     feat['vol_ratio'] = (v / v.rolling(20).mean()).reindex(ohlc.index)
-    return dict(ohlc=ohlc, events=collect_events(ohlc, cfg['order'], cfg['tri_lookback']), feat=feat, atr=atr(ohlc))
+    events = pd.concat([collect_events(ohlc, cfg['order'], cfg['tri_lookback']),
+                        collect_smc_events(ohlc, ORDER['daily'])], ignore_index=True)
+    return dict(ohlc=ohlc, events=events, feat=feat, atr=atr(ohlc))
 
 
 def run(strategies: list, start: pd.Timestamp, data_dir: str = 'data', download: bool = True,
@@ -97,9 +100,26 @@ def run(strategies: list, start: pd.Timestamp, data_dir: str = 'data', download:
     return pd.DataFrame(rows)
 
 
-def report(log: pd.DataFrame, start: pd.Timestamp):
+KEY = ['strategy', 'coin', 'signal_date']
+
+
+def what_changed(old: pd.DataFrame, new: pd.DataFrame) -> pd.DataFrame:
+    # Rows that are new since the previous run, or whose status changed (e.g. PENDING -> OPEN -> CLOSED).
+    if old is None or old.empty:
+        return new.copy()
+    m = new.merge(old[KEY + ['status']], on=KEY, how='left', suffixes=('', '_old'))
+    return m[m['status_old'].isna() | (m['status'] != m['status_old'])].drop(columns='status_old')
+
+
+def report(log: pd.DataFrame, start: pd.Timestamp, changed: pd.DataFrame = None):
     pd.set_option('display.width', 220)
     print(f'Paper trading since {start.date()}  (no real orders are placed)\n')
+    if changed is not None and len(changed):
+        print('NEW OR UPDATED SINCE LAST RUN')
+        cols = [c for c in ['strategy', 'coin', 'side', 'signal_date', 'status', 'reason', 'entry_price', 'net_pct'] if c in changed.columns]
+        print(changed[cols].round(3).to_string(index=False), '\n')
+    elif changed is not None:
+        print('Nothing new since the last run.\n')
     if log.empty:
         print('No signals yet. Run again after new daily candles close.')
         return
@@ -125,6 +145,11 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     start = get_start_date(args.start)
+    old = pd.read_csv(LOG_FILE) if os.path.exists(LOG_FILE) and os.path.getsize(LOG_FILE) > 2 else None
     log = run(load_strategies(), start, args.data_dir, download=not args.offline)
+    if old is not None:
+        old['signal_date'] = old['signal_date'].astype(str)
+    log['signal_date'] = log['signal_date'].astype(str) if len(log) else log.get('signal_date')
+    changed = what_changed(old, log) if len(log) else pd.DataFrame()
     log.to_csv(LOG_FILE, index=False)
-    report(log, start)
+    report(log, start, changed)

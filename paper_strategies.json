@@ -1,8 +1,41 @@
 {
   "note": "Rules were fixed on 2026-10-14 from proof_analysis.ipynb (exit rules tuned on pre-2024 trades). Do not edit them to chase results; add new strategies as new entries instead.",
   "strategies": [
-    {"name": "macd_bear_div (proven)", "pattern": "macd_bear_div", "direction": -1, "filter": "none", "stop": 1.0, "tgt": 2.0, "hold": 20},
-    {"name": "macd_and_rsi_bear (proven)", "pattern": "macd_and_rsi_bear", "direction": -1, "filter": "none", "stop": 2.0, "tgt": 2.0, "hold": 10},
-    {"name": "rsi_bear_div (near miss)", "pattern": "rsi_bear_div", "direction": -1, "filter": "none", "stop": 2.0, "tgt": 2.0, "hold": 10}
+    {
+      "name": "macd_bear_div (proven)",
+      "pattern": "macd_bear_div",
+      "direction": -1,
+      "filter": "none",
+      "stop": 1.0,
+      "tgt": 2.0,
+      "hold": 20
+    },
+    {
+      "name": "macd_and_rsi_bear (proven)",
+      "pattern": "macd_and_rsi_bear",
+      "direction": -1,
+      "filter": "none",
+      "stop": 2.0,
+      "tgt": 2.0,
+      "hold": 10
+    },
+    {
+      "name": "rsi_bear_div (near miss)",
+      "pattern": "rsi_bear_div",
+      "direction": -1,
+      "filter": "none",
+      "stop": 2.0,
+      "tgt": 2.0,
+      "hold": 10
+    },
+    {
+      "name": "fvg_bear_retest (unproven)",
+      "pattern": "fvg_bear_retest",
+      "direction": -1,
+      "filter": "none",
+      "stop": 2.0,
+      "tgt": null,
+      "hold": 20
+    }
   ]
 }
