@@ -83,15 +83,20 @@ def update_csv(path: str, symbol: str, interval: str, start: str = '2018-01-01')
         old = None
 
     new = fetch_klines(symbol, interval, start)
-    if old is not None:
-        if 'volume' not in old.columns:
-            new = new.drop(columns='volume')
-        df = pd.concat([old, new]).drop_duplicates('date', keep='last')
-    else:
-        df = new
+    if old is None:
+        new.to_csv(path, index=False)
+        return new
 
-    df = df.sort_values('date').reset_index(drop=True)
-    df.to_csv(path, index=False)
+    # Append only the new rows so existing rows are left byte-for-byte unchanged
+    new = new[new['date'] > old['date'].iloc[-1]]
+    new = new[[c for c in old.columns if c in new.columns]]
+    if len(new):
+        with open(path, 'rb+') as f:
+            f.seek(-1, os.SEEK_END)
+            if f.read(1) != b'\n':
+                f.write(b'\n')
+        new.to_csv(path, mode='a', header=False, index=False)
+    df = pd.concat([old, new], ignore_index=True)
     return df
 
 
