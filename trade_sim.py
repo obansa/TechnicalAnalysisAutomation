@@ -138,7 +138,7 @@ def tune_exit_rules(coins: dict, pattern: str, direction: int, test_start, cost=
 
 def random_entry_baseline(coins: dict, direction: int, stop_mult, tgt_mult, hold: int, test_start,
                           n_trades_per_coin: dict, cost=DEFAULT_COST, n_perm: int = 300, seed: int = 0,
-                          eligible: dict = None) -> np.ndarray:
+                          eligible: dict = None, pool_end=None) -> np.ndarray:
     # Mean net return per trade when the same number of trades per coin are entered on random
     # days in the recent period, in the same direction with the same exit rules.
     # eligible: same filter as the pattern trades used, so a filter cannot create an edge by itself.
@@ -152,6 +152,8 @@ def random_entry_baseline(coins: dict, direction: int, stop_mult, tgt_mult, hold
             cd['atr'] = atr(ohlc)
         first = int(np.searchsorted(ohlc.index, test_start)) - 1
         pool = np.arange(max(first, 14), len(ohlc) - 2)
+        if pool_end is not None:   # only entries before pool_end (to benchmark an earlier period)
+            pool = pool[ohlc.index[pool] < pd.Timestamp(pool_end)]
         if eligible is not None:
             pool = pool[eligible[sym][pool]]
         if len(pool) == 0:

@@ -57,3 +57,6 @@ The verdict column reads `edge holds` only if the pattern beat random entries in
 
 ### New pattern detectors (branch `ophand`)
 `smart_money.py` detects smart money concepts (break of structure, change of character, liquidity sweeps, fair value gaps, order blocks with retests) and `cup_handle.py` detects cup and handle. All report a pattern on the bar where it is first known. `tests/test_detectors.py` (run `python -m pytest tests`) checks each definition on hand-built candles, planted and malformed cups, and re-runs every detector on truncated data to prove there is no lookahead. `new_pattern_analysis.ipynb` shows the accuracy checks, then tests the patterns on six coins at daily, 4-hour and hourly bars (result: mostly a momentum effect, nothing proven as a trade).
+
+### Analysis of a broker article's strategies
+`vt_strategies.py` codes the rule-based strategies from the VT Markets article "10 Best Trading Strategies for 2026" (trend following, breakout, range/mean reversion) with the parameters it states, and `vt_strategies_analysis.ipynb` checks the article's claims and tests them on six coins with fees and random-entry comparisons. Result: 7 of 30 variants made money since 2024 and none passes the multiple-testing correction.
